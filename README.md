@@ -1,10 +1,58 @@
 # java-concurrent-pipeline
 
+[![build](https://github.com/vkyvikas7/java-concurrent-pipeline/actions/workflows/ci.yml/badge.svg)](https://github.com/vkyvikas7/java-concurrent-pipeline/actions/workflows/ci.yml)
+
 Concurrent Java pipeline that turns a slow sequential metadata-sync batch into a bounded worker pool, with measured throughput gains.
 
 A catalog sync receives asset-change events (tables, columns, dashboards, models). Each event has to be enriched — classification, owner, lineage — before it can be written to a search index. The enrich step is a blocking call. Doing that call one event at a time makes the batch as slow as `n` times the downstream latency. The concurrent engine overlaps those calls without letting the in-flight set grow without a limit.
 
 Java 17, Spring Boot 3.4, Maven. The pipeline core has no web dependency; Spring exposes it as a CLI benchmark and as `POST /api/v1/sync/run`.
+
+## Install
+
+JDK 17 or newer and Maven 3.8 or newer.
+
+```bash
+git clone https://github.com/vkyvikas7/java-concurrent-pipeline.git
+cd java-concurrent-pipeline
+mvn test
+mvn package
+java -jar target/java-concurrent-pipeline-1.0.0.jar --cli \
+  --pipeline.cli.mode=BOTH \
+  --pipeline.cli.items=160 \
+  --pipeline.cli.latency-ms=20 \
+  --pipeline.cli.workers=8 \
+  --pipeline.cli.queue-capacity=32 \
+  --pipeline.cli.batch-size=40
+```
+
+`mvn test` runs the suite, including the throughput check. `mvn package` writes `target/java-concurrent-pipeline-1.0.0.jar`. The `java -jar` line is a one-shot CLI run: no web server, a sequential-versus-concurrent table, then exit.
+
+## Usage
+
+CLI, using the defaults in `src/main/resources/application.yml`:
+
+```bash
+java -jar target/java-concurrent-pipeline-1.0.0.jar --cli
+```
+
+`--cli` is shorthand for `--pipeline.cli.enabled=true`. Override a setting with a Spring argument, for example `--pipeline.cli.workers=8`.
+
+HTTP:
+
+```bash
+mvn spring-boot:run
+```
+
+```bash
+curl -s http://localhost:8080/api/v1/sync
+
+curl -s -X POST http://localhost:8080/api/v1/sync/run \
+  -H 'Content-Type: application/json' \
+  -d '{"mode":"BOTH","itemCount":160,"latencyMillis":20,"workerCount":8,"queueCapacity":32,"batchSize":40,"ordering":"UNORDERED"}'
+```
+
+The report fields, demo limits, and the measured before/after numbers are in [Reproduce the benchmark](#reproduce-the-benchmark).
 
 ## Problem
 
